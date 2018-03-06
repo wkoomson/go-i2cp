@@ -9,6 +9,5 @@ func Deinit() {
 }
 
 const (
-	CLIENT uint32 = (iota +1) << 8
-
+	CLIENT uint32 = (iota + 1) << 8
 )
