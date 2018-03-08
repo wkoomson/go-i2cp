@@ -174,7 +174,7 @@ func (c *Crypto) SignatureKeyPairFromStream(stream *Stream) (sgk SignatureKeyPai
 }
 
 // Generate a signature keypair
-func (c *Crypto) SignatureKeygen(algorithmTyp uint8) (sgk SignatureKeyPair, err error) {
+func (c *Crypto) SignatureKeygen(algorithmTyp uint32) (sgk SignatureKeyPair, err error) {
 	var pkey dsa.PrivateKey
 	pkey.G = c.params.G
 	pkey.Q = c.params.Q
@@ -206,12 +206,12 @@ func (c *Crypto) EncodeStream(algorithmTyp uint8, src *Stream) (dst Stream) {
 	}
 	return
 }
-func (c *Crypto) DecodeStream(algorithmTyp uint8, src *Stream) (dst Stream) {
+func (c *Crypto) DecodeStream(algorithmTyp uint8, src *Stream) (dst Stream, err error) {
 	switch algorithmTyp {
 	case CODEC_BASE32:
-		c.b32.Decode(dst.Bytes(), src.Bytes())
+		_, err = c.b32.Decode(dst.Bytes(), src.Bytes())
 	case CODEC_BASE64:
-		c.b64.Decode(dst.Bytes(), src.Bytes())
+		_, err = c.b64.Decode(dst.Bytes(), src.Bytes())
 	}
 	return
 }
