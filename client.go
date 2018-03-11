@@ -78,9 +78,9 @@ type RouterInfo struct {
 
 type Client struct {
 	logger          *LoggerCallbacks // TODO idk wat this is for
-	callbacks       ClientCallBacks
+	callbacks       *ClientCallBacks
 	properties      [NR_OF_I2CP_CLIENT_PROPERTIES]string
-	tcp             *Tcp
+	tcp             Tcp
 	outputStream    *Stream
 	messageStream   *Stream
 	router          RouterInfo
@@ -98,17 +98,18 @@ type Client struct {
 var defaultConfigFile = "/.i2cp.conf"
 
 // NewClient creates a new i2p client with the specified callbacks
-func NewClient(callbacks ClientCallBacks) (c *Client) {
+func NewClient(callbacks *ClientCallBacks) (c *Client) {
 	c = new(Client)
 	c.callbacks = callbacks
 	LogInit(nil, ERROR)
-	c.outputStream = bytes.NewBuffer(make([]byte, 0, I2CP_MESSAGE_SIZE))
-	c.messageStream = bytes.NewBuffer(make([]byte, 0, I2CP_MESSAGE_SIZE))
+	c.outputStream = NewStream(make([]byte, 0, I2CP_MESSAGE_SIZE))
+	c.messageStream = NewStream(make([]byte, 0, I2CP_MESSAGE_SIZE))
 	c.setDefaultProperties()
 	c.lookup = make(map[string]uint32, 1000)
 	c.lookupReq = make(map[uint32]LookupEntry, 1000)
 	c.sessions = make(map[uint16]*Session)
 	c.outputQueue = make([]*Stream, 0)
+	c.tcp.Init()
 	return
 }
 
@@ -267,20 +268,21 @@ func (c *Client) onMsgPayload(stream *Stream) {
 	var protocol uint8
 	var sessionId, srcPort, destPort uint16
 	var messageId, payloadSize uint32
-	var out Stream
 	var err error
 	var ret int
 	Debug(TAG|PROTOCOL, "Received PayloadMessage message")
 	sessionId, err = stream.ReadUint16()
 	messageId, err = stream.ReadUint32()
+	_ = messageId // currently unused
 	session, ok := c.sessions[sessionId]
 	if !ok {
 		Fatal(TAG|FATAL, "Session id %d does not match any of our currently initiated sessions by %p", sessionId, c)
 	}
 	payloadSize, err = stream.ReadUint32()
+	_ = payloadSize // currently unused
 	// validate gzip header
 	var msgStream = bytes.NewBuffer(stream.Bytes())
-	ret, err = stream.Read(testHeader[:])
+	_, err = stream.Read(testHeader[:])
 	if testHeader != gzipHeader {
 		Warning(TAG, "Payload validation failed, skipping payload")
 		return
@@ -298,9 +300,10 @@ func (c *Client) onMsgPayload(stream *Stream) {
 		destPort, err = stream.ReadUint16()
 		_, err = stream.ReadByte()
 		protocol, err = stream.ReadByte()
-		session.dispatchMessage(protocol, srcPort, destPort, payload)
+		session.dispatchMessage(protocol, srcPort, destPort, &Stream{payload})
 	}
-
+	_ = err // currently unused
+	_ = ret // currently unused
 }
 func (c *Client) onMsgStatus(stream *Stream) {
 	var status uint8
@@ -313,6 +316,7 @@ func (c *Client) onMsgStatus(stream *Stream) {
 	status, err = stream.ReadByte()
 	size, err = stream.ReadUint32()
 	nonce, err = stream.ReadUint32()
+	_ = err // currently unused
 	Debug(TAG|PROTOCOL, "Message status; session id %d, message id %d, status %d, size %d, nonce %d", sessionId, messageId, status, size, nonce)
 }
 func (c *Client) onMsgDestReply(stream *Stream) {
@@ -354,7 +358,8 @@ func (c *Client) onMsgSessionStatus(stream *Stream) {
 	Debug(TAG|PROTOCOL, "Received SessionStatus message.")
 	sessionID, err = stream.ReadUint16()
 	sessionStatus, err = stream.ReadByte()
-	if sessionStatus == I2CP_SESSION_STATUS_CREATED {
+	_ = err // currently unused
+	if SessionStatus(sessionStatus) == I2CP_SESSION_STATUS_CREATED {
 		if c.currentSession == nil {
 			Error(TAG, "Received session status created without waiting for it %p", c)
 			return
@@ -367,11 +372,10 @@ func (c *Client) onMsgSessionStatus(stream *Stream) {
 	if sess == nil {
 		Fatal(TAG|FATAL, "Session with id %d doesn't exists in client instance %p.", sessionID, c)
 	} else {
-		sess.dispatchStatus(sessionStatus)
+		sess.dispatchStatus(SessionStatus(sessionStatus))
 	}
 }
 func (c *Client) onMsgReqVariableLease(stream *Stream) {
-	var t int
 	var sessionId uint16
 	var tunnels uint8
 	var sess *Session
@@ -386,9 +390,10 @@ func (c *Client) onMsgReqVariableLease(stream *Stream) {
 	}
 	leases = make([]*Lease, tunnels)
 	for i := uint8(0); i < tunnels; i++ {
-		leases[i] = NewLeaseFromStream(stream)
+		leases[i], err = NewLeaseFromStream(stream)
 	}
 	c.msgCreateLeaseSet(sess, tunnels, leases, true)
+	_ = err // currently unused
 }
 func (c *Client) onMsgHostReply(stream *Stream) {
 	var result uint8
@@ -407,6 +412,7 @@ func (c *Client) onMsgHostReply(stream *Stream) {
 		if err != nil {
 			Fatal(TAG|FATAL, "Failed to construct destination from stream.")
 		}
+		dest = &dst
 	}
 	sess = c.sessions[sessionId]
 	if sess == nil {
@@ -415,6 +421,7 @@ func (c *Client) onMsgHostReply(stream *Stream) {
 	lup = c.lookupReq[requestId]
 	delete(c.lookupReq, requestId)
 	sess.dispatchDestination(requestId, lup.address, dest)
+	_ = err // currently unused
 }
 
 func (c *Client) configFileParseCallback(name, value string) {
@@ -571,7 +578,6 @@ func (c *Client) Connect() {
 }
 
 func (c *Client) CreateSession(sess *Session) {
-	var config *SessionConfig
 	if c.n_sessions == I2CP_MAX_SESSIONS_PER_CLIENT {
 		Warning(TAG, "Maximum number of session per client connection reached.")
 		return
@@ -621,8 +627,7 @@ func (c *Client) DestinationLookup(session *Session, address string) (requestId 
 		Debug(TAG, "Lookup of b32 address detected, decode and use hash for faster lookup.")
 		host := address[:strings.Index(address, ".")]
 		in.Write([]byte(host))
-		dout, _ := GetCryptoInstance().DecodeStream(CODEC_BASE32, in)
-		out = &dout
+		out, _ = GetCryptoInstance().DecodeStream(CODEC_BASE32, in)
 		if out.Len() == 0 {
 			Warning(TAG, "Failed to decode hash of address '%s'", address)
 		}

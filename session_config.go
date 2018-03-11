@@ -85,7 +85,7 @@ func NewSessionConfigFromDestinationFile(filename string) (config SessionConfig)
 		}
 	}
 	if config.destination == nil {
-		dest, err := NewDestination()
+		dest, _ := NewDestination()
 		config.destination = &dest
 	}
 	if len(filename) > 0 {
@@ -113,14 +113,14 @@ func (config *SessionConfig) writeMappingToMessage(stream *Stream) (err error) {
 	count := 0
 	for i := 0; i < int(NR_OF_SESSION_CONFIG_PROPERTIES); i++ {
 		var option string
-		if sc.properties[i] == "" {
+		if config.properties[i] == "" {
 			continue
 		}
-		option = sc.configOptLookup(SessionConfigProperty(i))
+		option = config.configOptLookup(SessionConfigProperty(i))
 		if option == "" {
 			continue
 		}
-		is.Write([]byte(option + "=" + sc.properties[i] + ";"))
+		is.Write([]byte(option + "=" + config.properties[i] + ";"))
 		count++
 	}
 	Debug(SESSION_CONFIG, "Writing %d options to mapping table", count)

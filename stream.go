@@ -6,10 +6,12 @@ import (
 	"os"
 )
 
-type Stream = bytes.Buffer
+type Stream struct {
+	*bytes.Buffer
+}
 
-func NewStream(buf []byte) *Stream {
-	return bytes.NewBuffer(buf)
+func NewStream(buf []byte) (s *Stream) {
+	return &Stream{bytes.NewBuffer(buf)}
 }
 func (s *Stream) ReadUint16() (r uint16, err error) {
 	bts := make([]byte, 2)

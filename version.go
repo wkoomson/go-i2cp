@@ -1,7 +1,6 @@
 package go_i2cp
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -12,28 +11,23 @@ type Version struct {
 }
 
 func parseVersion(str string) Version {
-	var err error
-	var v Version = Version{}
+	var v = Version{}
 	segments := strings.Split(str, ".")
 	n := len(segments)
 	if n > 0 {
-		var i int
-		i, err = strconv.Atoi(segments[0])
+		i, _ := strconv.Atoi(segments[0])
 		v.major = uint16(i)
 	}
 	if n > 1 {
-		var i int
-		i, err = strconv.Atoi(segments[1])
+		i, _ := strconv.Atoi(segments[1])
 		v.minor = uint16(i)
 	}
 	if n > 2 {
-		var i int
-		i, err = strconv.Atoi(segments[2])
+		i, _ := strconv.Atoi(segments[2])
 		v.micro = uint16(i)
 	}
 	if n > 3 {
-		var i int
-		i, err = strconv.Atoi(segments[3])
+		i, _ := strconv.Atoi(segments[3])
 		v.qualifier = uint16(i)
 	}
 	return v

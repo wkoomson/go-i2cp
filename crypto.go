@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/base64"
+	"errors"
 	"hash"
 	"io"
 	"math/big"
@@ -171,6 +172,19 @@ func (c *Crypto) SignatureKeyPairFromStream(stream *Stream) (sgk SignatureKeyPai
 	return
 }
 
+func (c *Crypto) PublicKeyFromStream(keyType uint32, stream *Stream) (key *big.Int, err error) {
+	if keyType == DSA_SHA1 {
+		key = &big.Int{}
+		keyBytes := make([]byte, 128)
+		_, err = stream.Read(keyBytes)
+		key.SetBytes(keyBytes)
+		return key, err
+	} else {
+		Fatal(CRYPTO, "Unknown signature algorithm")
+		return nil, errors.New("Unknown signature algorithm")
+	}
+}
+
 // Generate a signature keypair
 func (c *Crypto) SignatureKeygen(algorithmTyp uint32) (sgk SignatureKeyPair, err error) {
 	var pkey dsa.PrivateKey
@@ -193,22 +207,27 @@ func (c *Crypto) HashStream(algorithmTyp uint8, src *Stream) *Stream {
 		return NewStream(c.sh256.Sum(src.Bytes()))
 	} else {
 		Fatal(tAG|FATAL, "Request of unsupported hash algorithm.")
+		return nil
 	}
 }
-func (c *Crypto) EncodeStream(algorithmTyp uint8, src *Stream) (dst Stream) {
+func (c *Crypto) EncodeStream(algorithmTyp uint8, src *Stream) (dst *Stream) {
 	switch algorithmTyp {
 	case CODEC_BASE32:
+		dst = NewStream(make([]byte, c.b32.EncodedLen(src.Len())))
 		c.b32.Encode(dst.Bytes(), src.Bytes())
 	case CODEC_BASE64:
+		dst = NewStream(make([]byte, c.b64.EncodedLen(src.Len())))
 		c.b64.Encode(dst.Bytes(), src.Bytes())
 	}
 	return
 }
-func (c *Crypto) DecodeStream(algorithmTyp uint8, src *Stream) (dst Stream, err error) {
+func (c *Crypto) DecodeStream(algorithmTyp uint8, src *Stream) (dst *Stream, err error) {
 	switch algorithmTyp {
 	case CODEC_BASE32:
+		dst = NewStream(make([]byte, c.b32.DecodedLen(src.Len())))
 		_, err = c.b32.Decode(dst.Bytes(), src.Bytes())
 	case CODEC_BASE64:
+		dst = NewStream(make([]byte, c.b64.DecodedLen(src.Len())))
 		_, err = c.b64.Decode(dst.Bytes(), src.Bytes())
 	}
 	return

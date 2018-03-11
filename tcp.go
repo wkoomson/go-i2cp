@@ -30,15 +30,15 @@ func (tcp *Tcp) Init() (err error) {
 
 func (tcp *Tcp) Connect() (err error) {
 	if USE_TLS {
-		roots, err := x509.SystemCertPool()
+		roots, _ := x509.SystemCertPool()
 		tcp.tlsConn, err = tls.Dial("tcp", tcp.address.String(), &tls.Config{RootCAs: roots})
-		err = tcp.tlsConn.Handshake()
 	} else {
 		tcp.conn, err = net.DialTCP("tcp", nil, tcp.address)
 		if err == nil {
 			err = tcp.conn.SetKeepAlive(true)
 		}
 	}
+	_ = err // currently unused
 	return
 }
 
