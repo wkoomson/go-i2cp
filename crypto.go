@@ -1,14 +1,12 @@
 package go_i2cp
 
 import (
-	"crypto"
 	"crypto/dsa"
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/base64"
-	"fmt"
 	"hash"
 	"io"
 	"math/big"

@@ -1,9 +1,7 @@
 package go_i2cp
 
 import (
-	"crypto"
 	"errors"
-	"github.com/cryptix/go/crypt"
 	"math/big"
 	"os"
 	"strings"
@@ -86,7 +84,7 @@ func NewDestinationFromBase64(base64 string) (dest Destination, err error) {
 	return NewDestinationFromMessage(&decoded)
 }
 
-func NewDestinationFromFile(file os.File) (dest Destination, err error) {
+func NewDestinationFromFile(file *os.File) (dest Destination, err error) {
 	var stream Stream
 	stream.loadFile(file)
 	return NewDestinationFromStream(&stream)

@@ -1,32 +1,31 @@
 package go_i2cp
 
 import (
-	"fmt"
-	"os"
-	"encoding/binary"
 	"bytes"
-	"io"
+	"encoding/binary"
+	"os"
 )
 
 type Stream = bytes.Buffer
+
 func NewStream(buf []byte) *Stream {
 	return bytes.NewBuffer(buf)
 }
 func (s *Stream) ReadUint16() (r uint16, err error) {
 	bts := make([]byte, 2)
-	_, err  = s.Read(bts)
+	_, err = s.Read(bts)
 	r = binary.LittleEndian.Uint16(bts)
 	return
 }
 func (s *Stream) ReadUint32() (r uint32, err error) {
 	bts := make([]byte, 4)
-	_, err  = s.Read(bts)
+	_, err = s.Read(bts)
 	r = binary.LittleEndian.Uint32(bts)
 	return
 }
 func (s *Stream) ReadUint64() (r uint64, err error) {
 	bts := make([]byte, 8)
-	_, err  = s.Read(bts)
+	_, err = s.Read(bts)
 	r = binary.LittleEndian.Uint64(bts)
 	return
 }
@@ -49,7 +48,7 @@ func (s *Stream) WriteUint64(i uint64) (err error) {
 	_, err = s.Write(bts)
 	return
 }
-func (s *Stream) loadFile(f os.File) (err error) {
+func (s *Stream) loadFile(f *os.File) (err error) {
 	_, err = f.Read(s.Bytes())
 	return
 }

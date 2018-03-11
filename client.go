@@ -6,6 +6,7 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"io"
+	"os"
 	"strings"
 	"sync"
 )
@@ -94,6 +95,8 @@ type Client struct {
 	lookupRequestId uint32
 }
 
+var defaultConfigFile = "/.i2cp.conf"
+
 // NewClient creates a new i2p client with the specified callbacks
 func NewClient(callbacks ClientCallBacks) (c *Client) {
 	c = new(Client)
@@ -112,10 +115,28 @@ func NewClient(callbacks ClientCallBacks) (c *Client) {
 func (c *Client) setDefaultProperties() {
 	c.properties[CLIENT_PROP_ROUTER_ADDRESS] = "127.0.0.1"
 	c.properties[CLIENT_PROP_ROUTER_PORT] = "7654"
-	// TODO PARSE I2CP config file
+	home := os.Getenv("HOME")
+	if len(home) == 0 {
+		return
+	}
+	config := home + defaultConfigFile
+	Debug(CLIENT, "Loading config file %s", config)
+	ParseConfig(config, func(name, value string) {
+		if prop := c.propFromString(name); prop >= 0 {
+			c.SetProperty(prop, value)
+		}
+	})
 }
 
-// TODO Write messageGetDate
+func (c *Client) propFromString(name string) ClientProperty {
+	for i := 0; ClientProperty(i) < NR_OF_I2CP_CLIENT_PROPERTIES; i++ {
+		if sessionOptions[i] == name {
+			return ClientProperty(i)
+		}
+	}
+	return ClientProperty(-1)
+}
+
 func (c *Client) messageGetDate(queue bool) {
 	Debug(PROTOCOL, "Sending GetDateMessage")
 	c.messageStream.Reset()
@@ -576,12 +597,13 @@ func (c *Client) ProcessIO() error {
 		}
 	}
 	c.lock.Unlock()
+	var err error
 	for c.tcp.CanRead() {
-		if err := c.recvMessage(I2CP_MSG_ANY, c.messageStream, true); err != nil {
+		if err = c.recvMessage(I2CP_MSG_ANY, c.messageStream, true); err != nil {
 			return err
 		}
 	}
-	return nil
+	return err
 }
 
 func (c *Client) DestinationLookup(session *Session, address string) (requestId uint32) {
