@@ -48,10 +48,11 @@ type Session struct {
 	callbacks *SessionCallbacks
 }
 
-func NewSession(client *Client, callbacks SessionCallbacks, destFilename string) (sess *Session) {
+func NewSession(client *Client, callbacks SessionCallbacks) (sess *Session) {
 	sess = &Session{}
 	sess.client = client
-	sess.config = &SessionConfig{}
+	dest, _ := NewDestination()
+	sess.config = &SessionConfig{destination: dest}
 	sess.callbacks = &callbacks
 	return
 }

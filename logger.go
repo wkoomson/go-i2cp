@@ -71,7 +71,7 @@ func Fatal(tags LoggerTags, message string, args ...interface{}) {
 
 func (l *Logger) log(tags LoggerTags, format string, args ...interface{}) {
 	if l.callbacks == nil {
-		fmt.Printf(format, args)
+		fmt.Printf(format+"\n", args)
 	} else {
 		l.callbacks.onLog(l, tags, fmt.Sprintf(format, args))
 	}

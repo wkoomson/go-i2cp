@@ -3,7 +3,7 @@ package go_i2cp
 import "testing"
 
 func TestRandomDestination(t *testing.T) {
-	var destOne, destTwo Destination
+	var destOne, destTwo *Destination
 	var err error
 	destOne, err = NewDestination()
 	var stream = NewStream(make([]byte, 4096))

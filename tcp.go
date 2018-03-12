@@ -21,7 +21,7 @@ const (
 var CAFile = "/etc/ssl/certs/ca-certificates.crt"
 var defaultRouterAddress = "127.0.0.1:7654"
 
-const USE_TLS = true
+const USE_TLS = false
 
 func (tcp *Tcp) Init() (err error) {
 	tcp.address, err = net.ResolveTCPAddr("tcp", defaultRouterAddress)

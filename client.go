@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-const I2CP_CLIENT_VERSION = "0.9.11"
+const I2CP_CLIENT_VERSION = "0.9.33"
 const TAG = CLIENT
 const I2CP_PROTOCOL_INIT uint8 = 0x2a
 const I2CP_MESSAGE_SIZE = 0xffff
@@ -61,6 +61,26 @@ const (
 	HOST_LOOKUP_TYPE_HOST = iota
 )
 
+var defaultProperties = map[string]string{
+	"i2cp.password":                  "",
+	"i2cp.username":                  "",
+	"i2cp.closeIdleTime":             "",
+	"i2cp.closeOnIdle":               "",
+	"i2cp.encryptLeaseSet":           "",
+	"i2cp.fastReceive":               "",
+	"i2cp.gzip":                      "",
+	"i2cp.leaseSetKey":               "",
+	"i2cp.leaseSetPrivateKey":        "",
+	"i2cp.leaseSetSigningPrivateKey": "",
+	"i2cp.messageReliability":        "",
+	"i2cp.reduceIdleTime":            "",
+	"i2cp.reduceOnIdle":              "",
+	"i2cp.reduceQuantity":            "",
+	"i2cp.SSL":                       "",
+	"i2cp.tcp.host":                  "127.0.0.1",
+	"i2cp.tcp.port":                  "7654",
+}
+
 type ClientCallBacks struct {
 	opaque       *interface{}
 	onDisconnect func(*Client, string, *interface{})
@@ -79,7 +99,7 @@ type RouterInfo struct {
 type Client struct {
 	logger          *LoggerCallbacks // TODO idk wat this is for
 	callbacks       *ClientCallBacks
-	properties      [NR_OF_I2CP_CLIENT_PROPERTIES]string
+	properties      map[string]string
 	tcp             Tcp
 	outputStream    *Stream
 	messageStream   *Stream
@@ -114,59 +134,25 @@ func NewClient(callbacks *ClientCallBacks) (c *Client) {
 }
 
 func (c *Client) setDefaultProperties() {
-	c.properties[CLIENT_PROP_ROUTER_ADDRESS] = "127.0.0.1"
-	c.properties[CLIENT_PROP_ROUTER_PORT] = "7654"
+	c.properties = defaultProperties
 	home := os.Getenv("HOME")
 	if len(home) == 0 {
 		return
 	}
 	config := home + defaultConfigFile
 	Debug(CLIENT, "Loading config file %s", config)
-	ParseConfig(config, func(name, value string) {
-		if prop := c.propFromString(name); prop >= 0 {
-			c.SetProperty(prop, value)
-		}
-	})
-}
-
-func (c *Client) propFromString(name string) ClientProperty {
-	for i := 0; ClientProperty(i) < NR_OF_I2CP_CLIENT_PROPERTIES; i++ {
-		if sessionOptions[i] == name {
-			return ClientProperty(i)
-		}
-	}
-	return ClientProperty(-1)
-}
-
-func (c *Client) messageGetDate(queue bool) {
-	Debug(PROTOCOL, "Sending GetDateMessage")
-	c.messageStream.Reset()
-	c.messageStream.WriteString(I2CP_CLIENT_VERSION)
-	/* write new 0.9.10 auth mapping if username property is set */
-	if c.properties[CLIENT_PROP_USERNAME] != "" {
-		auth := NewStream(make([]byte, 0, 512))
-		auth.WriteString("i2cp.password")
-		auth.WriteByte('=')
-		auth.WriteString(c.properties[CLIENT_PROP_PASSWORD])
-		auth.WriteByte(';')
-		auth.WriteString("i2cp.username")
-		auth.WriteByte('=')
-		auth.WriteString(c.properties[CLIENT_PROP_USERNAME])
-		auth.WriteByte(';')
-		c.messageStream.WriteUint16(uint16(auth.Len()))
-		c.messageStream.Write(auth.Bytes())
-		auth.Reset()
-	}
-	if err := c.sendMessage(I2CP_MSG_GET_DATE, c.messageStream, queue); err != nil {
-		Error(0, "%s", "error while sending GetDateMessage.")
-	}
+	ParseConfig(config, c.SetProperty)
 }
 
 func (c *Client) sendMessage(typ uint8, stream *Stream, queue bool) (err error) {
-	send := NewStream(make([]byte, stream.Len()+4+1))
+	send := NewStream(make([]byte, 0, stream.Len()+4+1))
 	err = send.WriteUint32(uint32(stream.Len()))
 	err = send.WriteByte(typ)
+	lenb := stream.Len()
+	_ = lenb
 	_, err = send.Write(stream.Bytes())
+	lenc := send.Len()
+	_ = lenc
 	if queue {
 		Debug(PROTOCOL, "Putting %d bytes message on the output queue.", send.Len())
 		c.lock.Lock()
@@ -190,16 +176,15 @@ func (c *Client) recvMessage(typ uint8, stream *Stream, dispatch bool) (err erro
 	length, err = firstFive.ReadUint32()
 	msgType, err = firstFive.ReadByte()
 	if (typ == I2CP_MSG_SET_DATE) && (length > 0xffff) {
-		Fatal(PROTOCOL, "Unexpected response, your router is probably configured to use SSL")
+		Fatal(PROTOCOL, "Unexpected response, check that your router SSL settings match the ~/.i2cp.conf configuration")
 	}
-	if length > 0xffff {
+	if length > 0xffff && typ != I2CP_MSG_DISCONNECT {
 		Fatal(PROTOCOL, "unexpected message length, length > 0xffff")
 	}
 	if (typ != 0) && (msgType != typ) {
 		Error(PROTOCOL, "expected message type %d, received %d", typ, msgType)
 	}
 	// receive rest
-	stream.ChLen(int(length))
 	i, err = c.tcp.Receive(stream)
 
 	if dispatch {
@@ -241,7 +226,7 @@ func (c *Client) onMsgSetDate(stream *Stream) {
 	version := make([]byte, verLength)
 	_, err = stream.Read(version)
 	c.router.version = parseVersion(string(version))
-	Debug(TAG|PROTOCOL, "Router version %s, date %ld", string(version), c.router.date)
+	Debug(TAG|PROTOCOL, "Router version %s, date %d", string(version), c.router.date)
 	if err != nil {
 		Error(TAG|PROTOCOL, "Could not read SetDate correctly data")
 	}
@@ -250,17 +235,21 @@ func (c *Client) onMsgSetDate(stream *Stream) {
 	}
 }
 func (c *Client) onMsgDisconnect(stream *Stream) {
-	var size uint8
 	var err error
 	Debug(TAG|PROTOCOL, "Received Disconnect message")
-	size, err = stream.ReadByte()
-	strbuf := make([]byte, size)
+	//size, err = stream.ReadByte()
+	strbuf := make([]byte, stream.Len())
+	lens := stream.Len()
+	_ = lens
 	_, err = stream.Read(strbuf)
+
 	Debug(TAG|PROTOCOL, "Received Disconnect message with reason %s", string(strbuf))
 	if err != nil {
 		Error(TAG|PROTOCOL, "Could not read msgDisconnect correctly data")
 	}
-	c.callbacks.onDisconnect(c, string(strbuf), nil)
+	if c.callbacks != nil && c.callbacks.onDisconnect != nil {
+		c.callbacks.onDisconnect(c, string(strbuf), nil)
+	}
 }
 func (c *Client) onMsgPayload(stream *Stream) {
 	var gzipHeader = [3]byte{0x1f, 0x8b, 0x08}
@@ -321,7 +310,7 @@ func (c *Client) onMsgStatus(stream *Stream) {
 }
 func (c *Client) onMsgDestReply(stream *Stream) {
 	var b32 string
-	var destination Destination
+	var destination *Destination
 	var lup LookupEntry
 	var err error
 	var requestId uint32
@@ -344,7 +333,7 @@ func (c *Client) onMsgDestReply(stream *Stream) {
 	if lup == (LookupEntry{}) {
 		Warning(TAG, "No sesssion for destination lookup of address '%s'", b32)
 	} else {
-		lup.session.dispatchDestination(requestId, b32, &destination)
+		lup.session.dispatchDestination(requestId, b32, destination)
 	}
 }
 func (c *Client) onMsgBandwithLimit(stream *Stream) {
@@ -408,11 +397,10 @@ func (c *Client) onMsgHostReply(stream *Stream) {
 	requestId, err = stream.ReadUint32()
 	result, err = stream.ReadByte()
 	if result == 0 {
-		dst, err := NewDestinationFromMessage(stream)
+		dest, err = NewDestinationFromMessage(stream)
 		if err != nil {
 			Fatal(TAG|FATAL, "Failed to construct destination from stream.")
 		}
-		dest = &dst
 	}
 	sess = c.sessions[sessionId]
 	if sess == nil {
@@ -424,22 +412,6 @@ func (c *Client) onMsgHostReply(stream *Stream) {
 	_ = err // currently unused
 }
 
-func (c *Client) configFileParseCallback(name, value string) {
-	switch name {
-	case "i2cp.tcp.host":
-		c.properties[CLIENT_PROP_ROUTER_ADDRESS] = value
-	case "i2cp.tcp.port":
-		c.properties[CLIENT_PROP_ROUTER_PORT] = value
-	case "i2cp.tcp.SSL":
-		c.properties[CLIENT_PROP_ROUTER_USE_TLS] = value
-	case "i2cp.tcp.username":
-		c.properties[CLIENT_PROP_USERNAME] = value
-	case "i2cp.tcp.password":
-		c.properties[CLIENT_PROP_PASSWORD] = value
-	default:
-		break
-	}
-}
 func (c *Client) msgCreateLeaseSet(session *Session, tunnels uint8, leases []*Lease, queue bool) {
 	var err error
 	var nullbytes [256]byte
@@ -476,22 +448,17 @@ func (c *Client) msgCreateLeaseSet(session *Session, tunnels uint8, leases []*Le
 }
 func (c *Client) msgGetDate(queue bool) {
 	var err error
-	var auth *Stream
 	Debug(TAG|PROTOCOL, "Sending GetDateMessage")
 	c.messageStream.Reset()
-	c.messageStream.Write([]byte(I2CP_CLIENT_VERSION))
-	if len(c.properties[CLIENT_PROP_USERNAME]) > 0 {
-		auth = NewStream(make([]byte, 0, 512))
-		auth.Write([]byte("i2cp.password="))
-		auth.Write([]byte(c.properties[CLIENT_PROP_PASSWORD]))
-		auth.Write([]byte(";"))
-		auth.Write([]byte("i2cp.username="))
-		auth.Write([]byte(c.properties[CLIENT_PROP_USERNAME]))
-		auth.Write([]byte(";"))
-		c.messageStream.WriteUint16(uint16(auth.Len()))
-		c.messageStream.Write(auth.Bytes())
+	c.messageStream.WriteLenPrefixedString(I2CP_CLIENT_VERSION)
+	if len(c.properties["i2cp.username"]) > 0 {
+		authInfo := map[string]string{
+			"i2cp.username": c.properties["i2cp.username"],
+			"i2cp.password": c.properties["i2cp.password"],
+		}
+		c.messageStream.WriteMapping(authInfo)
 	}
-	if err = c.sendMessage(I2CP_MSG_SET_DATE, c.messageStream, queue); err != nil {
+	if err = c.sendMessage(I2CP_MSG_GET_DATE, c.messageStream, queue); err != nil {
 		Error(TAG, "Error while sending GetDateMessage")
 	}
 }
@@ -564,7 +531,7 @@ func (c *Client) msgSendMessage(sess *Session, dest *Destination, protocol uint8
 	}
 }
 func (c *Client) Connect() {
-	Info(0, "Client connecting to i2cp at %s:%s", c.properties[CLIENT_PROP_ROUTER_ADDRESS], c.properties[CLIENT_PROP_ROUTER_PORT])
+	Info(0, "Client connecting to i2cp at %s:%s", c.properties["i2cp.tcp.host"], c.properties["i2cp.tcp.host"])
 	err := c.tcp.Connect()
 	if err != nil {
 		panic(err)
@@ -654,20 +621,18 @@ func (c *Client) Disconnect() {
 	c.tcp.Disconnect()
 }
 
-func (c *Client) SetProperty(property ClientProperty, value string) {
-	c.properties[property] = value
-	switch property {
-	case CLIENT_PROP_ROUTER_ADDRESS:
-		c.tcp.SetProperty(TCP_PROP_ADDRESS, c.properties[CLIENT_PROP_ROUTER_ADDRESS])
-	case CLIENT_PROP_ROUTER_PORT:
-		c.tcp.SetProperty(TCP_PROP_PORT, c.properties[CLIENT_PROP_ROUTER_PORT])
-	case CLIENT_PROP_ROUTER_USE_TLS:
-		c.tcp.SetProperty(TCP_PROP_USE_TLS, c.properties[CLIENT_PROP_ROUTER_USE_TLS])
+func (c *Client) SetProperty(name, value string) {
+	if _, ok := c.properties[name]; ok {
+		c.properties[name] = value
+		switch name {
+		case "i2cp.tcp.host":
+			c.tcp.SetProperty(TCP_PROP_ADDRESS, c.properties[name])
+		case "i2cp.tcp.port":
+			c.tcp.SetProperty(TCP_PROP_PORT, c.properties[name])
+		case "i2cp.SSL":
+			c.tcp.SetProperty(TCP_PROP_USE_TLS, c.properties[name])
+		}
 	}
-}
-
-func (c *Client) GetProperty(property ClientProperty) string {
-	return c.properties[property]
 }
 
 func (c *Client) IsConnected() bool {

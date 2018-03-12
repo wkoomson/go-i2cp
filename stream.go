@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
+	"sort"
 )
 
 type Stream struct {
@@ -16,40 +17,68 @@ func NewStream(buf []byte) (s *Stream) {
 func (s *Stream) ReadUint16() (r uint16, err error) {
 	bts := make([]byte, 2)
 	_, err = s.Read(bts)
-	r = binary.LittleEndian.Uint16(bts)
+	r = binary.BigEndian.Uint16(bts)
 	return
 }
 func (s *Stream) ReadUint32() (r uint32, err error) {
 	bts := make([]byte, 4)
 	_, err = s.Read(bts)
-	r = binary.LittleEndian.Uint32(bts)
+	r = binary.BigEndian.Uint32(bts)
 	return
 }
 func (s *Stream) ReadUint64() (r uint64, err error) {
 	bts := make([]byte, 8)
 	_, err = s.Read(bts)
-	r = binary.LittleEndian.Uint64(bts)
+	r = binary.BigEndian.Uint64(bts)
 	return
 }
 
 func (s *Stream) WriteUint16(i uint16) (err error) {
 	bts := make([]byte, 2)
-	binary.LittleEndian.PutUint16(bts, i)
+	binary.BigEndian.PutUint16(bts, i)
 	_, err = s.Write(bts)
 	return
 }
 func (s *Stream) WriteUint32(i uint32) (err error) {
 	bts := make([]byte, 4)
-	binary.LittleEndian.PutUint32(bts, i)
+	binary.BigEndian.PutUint32(bts, i)
 	_, err = s.Write(bts)
 	return
 }
 func (s *Stream) WriteUint64(i uint64) (err error) {
 	bts := make([]byte, 8)
-	binary.LittleEndian.PutUint64(bts, i)
+	binary.BigEndian.PutUint64(bts, i)
 	_, err = s.Write(bts)
 	return
 }
+
+func (stream *Stream) WriteLenPrefixedString(s string) (err error) {
+	err = stream.WriteByte(uint8(len(s)))
+	_, err = stream.WriteString(s)
+	return
+}
+
+func (stream *Stream) WriteMapping(m map[string]string) (err error) {
+	buf := NewStream(make([]byte, 0))
+	keys := make([]string, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		buf.WriteLenPrefixedString(key)
+		buf.WriteByte(byte('='))
+		buf.WriteLenPrefixedString(m[key])
+		buf.WriteByte(byte(';'))
+	}
+	err = stream.WriteUint16(uint16(buf.Len()))
+	_, err = stream.Write(buf.Bytes())
+	return
+}
+
 func (s *Stream) loadFile(f *os.File) (err error) {
 	_, err = f.Read(s.Bytes())
 	return

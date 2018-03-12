@@ -78,15 +78,13 @@ type SessionConfig struct {
 func NewSessionConfigFromDestinationFile(filename string) (config SessionConfig) {
 	var home string
 	if file, err := os.Open(filename); err == nil {
-		dest, err := NewDestinationFromFile(file)
-		config.destination = &dest
+		config.destination, err = NewDestinationFromFile(file)
 		if err != nil {
 			Warning(SESSION_CONFIG, "Failed to load destination from file '%s', a new destination will be generated.", filename)
 		}
 	}
 	if config.destination == nil {
-		dest, _ := NewDestination()
-		config.destination = &dest
+		config.destination, _ = NewDestination()
 	}
 	if len(filename) > 0 {
 		config.destination.WriteToFile(filename)
@@ -105,12 +103,11 @@ func NewSessionConfigFromDestinationFile(filename string) (config SessionConfig)
 func (config *SessionConfig) writeToMessage(stream *Stream) {
 	config.destination.WriteToMessage(stream)
 	config.writeMappingToMessage(stream)
-	stream.WriteUint64(uint64(time.Now().Unix()))
+	stream.WriteUint64(uint64(time.Now().Unix() * 1000))
 	GetCryptoInstance().WriteSignatureToStream(&config.destination.sgk, stream)
 }
 func (config *SessionConfig) writeMappingToMessage(stream *Stream) (err error) {
-	is := NewStream(make([]byte, 0xffff))
-	count := 0
+	m := make(map[string]string)
 	for i := 0; i < int(NR_OF_SESSION_CONFIG_PROPERTIES); i++ {
 		var option string
 		if config.properties[i] == "" {
@@ -120,15 +117,10 @@ func (config *SessionConfig) writeMappingToMessage(stream *Stream) (err error) {
 		if option == "" {
 			continue
 		}
-		is.Write([]byte(option + "=" + config.properties[i] + ";"))
-		count++
+		m[option] = config.properties[i]
 	}
-	Debug(SESSION_CONFIG, "Writing %d options to mapping table", count)
-	err = stream.WriteUint16(uint16(is.Len()))
-	if is.Len() > 0 {
-		_, err = stream.Write(is.Bytes())
-	}
-	return
+	Debug(SESSION_CONFIG, "Writing %d options to mapping table", len(m))
+	return stream.WriteMapping(m)
 }
 func (config *SessionConfig) configOptLookup(property SessionConfigProperty) string {
 	return sessionOptions[property]

@@ -23,7 +23,8 @@ type Destination struct {
 	b64        string
 }
 
-func NewDestination() (dest Destination, err error) {
+func NewDestination() (dest *Destination, err error) {
+	dest = &Destination{}
 	nullCert := NewCertificate(CERTIFICATE_NULL)
 	dest.cert = &nullCert
 	dest.sgk, err = GetCryptoInstance().SignatureKeygen(DSA_SHA1)
@@ -33,7 +34,8 @@ func NewDestination() (dest Destination, err error) {
 	return
 }
 
-func NewDestinationFromMessage(stream *Stream) (dest Destination, err error) {
+func NewDestinationFromMessage(stream *Stream) (dest *Destination, err error) {
+	dest = &Destination{}
 	_, err = stream.Read(dest.pubKey[:])
 	if err != nil {
 		return
@@ -53,12 +55,13 @@ func NewDestinationFromMessage(stream *Stream) (dest Destination, err error) {
 	dest.cert = &cert
 	dest.generateB32()
 	dest.generateB64()
-	return
+	return dest, err
 }
 
-func NewDestinationFromStream(stream *Stream) (dest Destination, err error) {
+func NewDestinationFromStream(stream *Stream) (dest *Destination, err error) {
 	var cert Certificate
 	var pubKeyLen uint16
+	dest = &Destination{}
 	cert, err = NewCertificateFromStream(stream)
 	dest.cert = &cert
 	dest.sgk, err = GetCryptoInstance().SignatureKeyPairFromStream(stream)
@@ -72,7 +75,7 @@ func NewDestinationFromStream(stream *Stream) (dest Destination, err error) {
 	return
 }
 
-func NewDestinationFromBase64(base64 string) (dest Destination, err error) {
+func NewDestinationFromBase64(base64 string) (dest *Destination, err error) {
 	/* Same as decode, except from a filesystem / URL friendly set of characters,
 	*  replacing / with ~, and + with -
 	 */
@@ -91,7 +94,7 @@ func NewDestinationFromBase64(base64 string) (dest Destination, err error) {
 	return NewDestinationFromMessage(decoded)
 }
 
-func NewDestinationFromFile(file *os.File) (dest Destination, err error) {
+func NewDestinationFromFile(file *os.File) (*Destination, error) {
 	var stream Stream
 	stream.loadFile(file)
 	return NewDestinationFromStream(&stream)
